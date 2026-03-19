@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>City Game Ultimate</title>
+
+<style>
+body { margin:0; font-family:Arial; text-align:center; background:#87CEEB; }
+
+/* START SCREEN */
+#startScreen {
+    position:fixed; width:100%; height:100%;
+    background:linear-gradient(#4CAF50,#2E7D32);
+    color:white; display:flex; flex-direction:column;
+    justify-content:center; align-items:center; z-index:1000;
+}
+
+/* COUNTDOWN */
+#countdownScreen {
+    position:fixed; width:100%; height:100%;
+    background:rgba(0,0,0,0.85);
+    color:white; display:none;
+    justify-content:center; align-items:center;
+    font-size:100px; z-index:1001;
+}
+
+/* GAME */
+#game { position:relative; width:100vw; height:60vh; }
+
+#background {
+    position:absolute; width:100%; height:100%;
+    background:url('https://img.freepik.com/free-vector/scene-with-house-garden_1308-94512.jpg?semt=ais_hybrid&w=740&q=80') center/cover no-repeat;
+}
+
+#road { position:absolute; bottom:0; width:100%; height:100px; background:#444; }
+
+#car { position:absolute; bottom:20px; left:50px; font-size:60px; transition:0.6s; }
+#barrier { position:absolute; bottom:20px; right:120px; font-size:60px; }
+
+.highlight { background:yellow; }
+
+/* FINISH */
+#finishScreen {
+    display:none; position:fixed; width:100%; height:100%;
+    background:rgba(0,0,0,0.9); color:white; z-index:999;
+    justify-content:center; align-items:center; flex-direction:column;
+}
+
+/* UI */
+button { font-size:18px; padding:10px; margin:5px; border-radius:10px; border:none; background:#4CAF50; color:white; }
+
+#teacherPanel { background:#222; color:white; padding:10px; }
+
+/* MIC */
+#micBar { width:200px; height:20px; background:#ccc; margin:auto; }
+#micLevel { height:100%; width:0%; background:green; }
+</style>
+</head>
+
+<body>
+
+<!-- START -->
+<div id="startScreen">
+    <h1>🚗 City Game</h1>
+    <button onclick="startGame()">▶️ Start Game</button>
+</div>
+
+<!-- COUNTDOWN -->
+<div id="countdownScreen">
+    <h1 id="countText">3</h1>
+</div>
+
+<!-- GAME -->
+<div id="game">
+    <div id="background"></div>
+    <div id="road"></div>
+    <div id="car">🚗</div>
+    <div id="barrier">🚧</div>
+</div>
+
+<h2 id="sentence"></h2>
+
+<button onclick="playSentence()">🔊 Listen</button>
+<button onclick="startListening()">🎤 Speak</button>
+<button onclick="repeatMode()">🧠 Repeat</button>
+<button onclick="toggleMusic()">🎵 Music</button>
+<button onclick="toggleHeadphone()">🎧 Headphone</button>
+<button onclick="nextSentence()">➡️ Next</button>
+
+<p id="listening">Status: Idle</p>
+<h2 id="status"></h2>
+
+<p>🎤 Voice Level:</p>
+<div id="micBar"><div id="micLevel"></div></div>
+
+<h3>Student: <span id="studentName">Student</span></h3>
+<h3>Level: <span id="level">1</span></h3>
+<h3>Score: <span id="score">0</span></h3>
+
+<div id="teacherPanel">
+👩‍🏫 Teacher Panel:
+<button onclick="prevSentence()">⬅️</button>
+<button onclick="nextSentence()">➡️</button>
+<button onclick="resetGame()">🔄</button>
+</div>
+
+<!-- FINISH -->
+<div id="finishScreen">
+<h1>🏁 Finished!</h1>
+<h2 id="finalMessage"></h2>
+<div style="font-size:80px;">🏆</div>
+<canvas id="confettiCanvas"></canvas>
+</div>
+
+<script>
+// =====================
+// START
+// =====================
+let name="Student", micReady=false;
+
+async function startGame(){
+    studentName.innerText=name;
+
+    try{
+        await navigator.mediaDevices.getUserMedia({audio:true});
+        micReady=true;
+    }catch{
+        alert("⚠️ Please allow microphone access!");
+        return;
+    }
+
+    setupMicMeter();
+
+    startScreen.style.display="none";
+    startCountdown();
+}
+
+// =====================
+// COUNTDOWN
+// =====================
+function startCountdown(){
+    let screen=document.getElementById("countdownScreen");
+    let text=document.getElementById("countText");
+
+    screen.style.display="flex";
+
+    let count=3;
+
+    let interval=setInterval(()=>{
+        if(count>0){
+            text.innerText=count;
+        }else if(count===0){
+            text.innerText="GO!";
+        }
+
+        count--;
+
+        if(count<-1){
+            clearInterval(interval);
+            screen.style.display="none";
+        }
+    },1000);
+}
+
+// =====================
+// MUSIC
+// =====================
+let music=new Audio("https://www.bensound.com/bensound-music/bensound-funky-element.mp3");
+music.loop=true;
+
+function toggleMusic(){ music.paused?music.play():music.pause(); }
+
+// =====================
+// DATA
+// =====================
+const sentences=[
+"I am eating","She is drinking","He is sleeping",
+"I am running","She is reading","He is writing","I am swimming"
+];
+
+let current=0, score=0, headphone=false;
+
+// =====================
+function showSentence(){
+    sentence.innerHTML=sentences[current].split(" ").map(w=>`<span>${w}</span>`).join(" ");
+    level.innerText=current+1;
+}
+showSentence();
+
+// =====================
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+const recognition=new SpeechRecognition();
+
+recognition.continuous=true;
+recognition.interimResults=true;
+
+function startListening(){
+    if(!micReady)return alert("Mic not ready");
+    listening.innerText="🎤 Listening...";
+    recognition.start();
+    setTimeout(()=>recognition.stop(),4000);
+}
+
+recognition.onresult=e=>{
+    let t="";
+    for(let i=0;i<e.results.length;i++) t+=e.results[i][0].transcript+" ";
+    highlight(t);
+    checkAnswer(t, sentences[current]);
+};
+
+// =====================
+function highlight(spoken){
+    let words=spoken.toLowerCase().split(" ");
+    document.querySelectorAll("#sentence span").forEach(s=>{
+        if(words.includes(s.innerText.toLowerCase())) s.classList.add("highlight");
+    });
+}
+
+// =====================
+function similarity(a,b){
+    a=a.toLowerCase().replace(/(uh|um|ah)/g,'');
+    let A=a.split(" "), B=b.toLowerCase().split(" ");
+    let m=0; A.forEach(w=>{if(B.includes(w))m++;});
+    return m/B.length;
+}
+
+function checkAnswer(s,t){
+    similarity(s,t)>=0.6?correct():wrong();
+}
+
+// =====================
+function correct(){
+    status.innerText="🎉 Correct!";
+    score+=2; document.getElementById("score").innerText=score;
+    car.style.transform="translateX(300px)";
+    new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3").play();
+}
+
+function wrong(){
+    status.innerText="💥 Crash!";
+    car.style.transform="translateX(380px)";
+    new Audio("https://www.soundjay.com/mechanical/sounds/crash-1.mp3").play();
+}
+
+// =====================
+function repeatMode(){
+    let s=new SpeechSynthesisUtterance(sentences[current]);
+    s.rate=0.8;
+    s.onend=()=>setTimeout(startListening,500);
+    speechSynthesis.speak(s);
+}
+
+function toggleHeadphone(){
+    headphone=!headphone;
+    status.innerText=headphone?"🎧 Headphone ON":"🔊 Normal";
+}
+
+function playSentence(){
+    let s=new SpeechSynthesisUtterance(sentences[current]);
+    s.rate=headphone?0.7:0.9;
+    speechSynthesis.speak(s);
+}
+
+// =====================
+let analyser,dataArray;
+
+async function setupMicMeter(){
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const ctx=new AudioContext();
+    analyser=ctx.createAnalyser();
+    const mic=ctx.createMediaStreamSource(stream);
+    mic.connect(analyser);
+    dataArray=new Uint8Array(analyser.frequencyBinCount);
+    detectVolume();
+}
+
+function detectVolume(){
+    analyser.getByteFrequencyData(dataArray);
+    let vol=dataArray.reduce((a,b)=>a+b)/dataArray.length;
+    micLevel.style.width=Math.min(100,vol)+"%";
+    requestAnimationFrame(detectVolume);
+}
+
+// =====================
+function nextSentence(){
+    current++;
+    if(current>=sentences.length)return finish();
+    reset(); showSentence();
+}
+
+function prevSentence(){
+    current=Math.max(0,current-1);
+    reset(); showSentence();
+}
+
+// =====================
+function finish(){
+    finishScreen.style.display="flex";
+    finalMessage.innerText=name+" Score: "+score;
+    confetti();
+    setTimeout(()=>{finishScreen.style.display="none"; resetGame();},5000);
+}
+
+function confetti(){
+    let c=confettiCanvas,ctx=c.getContext("2d");
+    c.width=innerWidth; c.height=innerHeight;
+    let p=Array.from({length:100},()=>({x:Math.random()*c.width,y:Math.random()*c.height,s:Math.random()*8+4,v:Math.random()*3+2}));
+    (function draw(){
+        ctx.clearRect(0,0,c.width,c.height);
+        p.forEach(o=>{
+            ctx.fillStyle=`hsl(${Math.random()*360},100%,50%)`;
+            ctx.fillRect(o.x,o.y,o.s,o.s);
+            o.y+=o.v; if(o.y>c.height)o.y=0;
+        });
+        requestAnimationFrame(draw);
+    })();
+}
+
+// =====================
+function resetGame(){
+    current=0; score=0; document.getElementById("score").innerText=score;
+    reset(); showSentence();
+}
+
+function reset(){
+    car.style.transform="translateX(0)";
+    status.innerText="";
+}
+</script>
+
+</body>
+</html>
